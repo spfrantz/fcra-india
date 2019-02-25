@@ -5,6 +5,7 @@ import logging
 from selenium import webdriver
 from selenium.webdriver.support.ui import Select
 import os
+import pickle
 import requests
 import sqlite3
 from time import sleep
@@ -21,7 +22,6 @@ driver = webdriver.Chrome(executable_path= \
 
 logging.basicConfig(filename="download_fcra.log", level=logging.INFO, \
                     format="%(asctime)s:%(levelname)s:%(message)s")
-
 
 def main():
     '''
@@ -40,7 +40,7 @@ def main():
     qtrs = get_quarters(years)
     
     # Open existing database
-    db_name="example_wb.db"
+    db_name="example_wb.db" # change back to: "example_wb.db"
     db, c = database_connect(db_name)
     
     # Query database for numerical IDs and names of all districts of West Bengal
@@ -101,6 +101,9 @@ def get_state_list():
         states[id] = (driver.find_element_by_xpath \
                                   ("//select[@id='DdnListState']//option[@value=" \
                                    + '"' + id + '"' + ']').text)
+    
+    # Save states list to file
+    pickle.dump(states, open("./obj/states.p", "wb"))
     print("States available: ", states)
     return states
     
@@ -108,7 +111,7 @@ def get_district_lists(states):
     '''
     Retrieve a list of districts in the FCRA database by navigating the 
     drop-down menus. Takes as input a dictionary that has state IDs as keys. 
-    =Returns a dictionary of dictionaries in the following format:
+    Returns a dictionary of dictionaries in the following format:
         {'state1_id':{'state1_dist1_id':'state1_dist1_name'...}, /
         'state2_id':{'state2_dist1_id':'state2_dist1_name'...}...}
     '''  
@@ -126,6 +129,9 @@ def get_district_lists(states):
             dist_name = option.text
             state_dists[dist_id] = dist_name
         district_list[id] = state_dists
+    
+    # Save districts list to file
+    pickle.dump(district_list, open("./obj/districts.p", "wb"))
     return(district_list)
 
 # SQLite database initialization
@@ -234,15 +240,21 @@ def download_disclosures(quarters, districts):
                 
                 # Compile dict of organization names and FCRA reg numbers
                 dyq_orgs={}
+                null_returns=set()
                 table_rows = driver.find_elements_by_xpath \
                                     ("//table[@id='GridView1']//tr")
                 for row in table_rows[1:]:
                     table_data = row.find_elements_by_tag_name('td')
                     org_name = table_data[1].text
                     org_fcra = table_data[2].text
+                    amount = table_data[3].text
                     
                     # Save dictionary of district-year-quarter disclosures to scrape
                     dyq_orgs[org_fcra] = org_name
+                    
+                    # If amount is 0.00, add to set of null returns (don't download!)
+                    if amount == "0.00":
+                        null_returns.add(org_fcra)
                     
                 # Check if each organization is already in the database; if not, 
                 # update organizations data table
@@ -258,14 +270,17 @@ def download_disclosures(quarters, districts):
                 # Save PDF disclosures
                 # TODO: don't download returns with amount 0.00
                 for org in dyq_orgs.keys():
-                    r = requests.get(starturl + org + "R&fin_year=" \
-                                     + yr +"&quarter=" + qtr)
-                    with open(filepath + '/D_' + org + '_' + yr + '_' \
-                              + qtr +".pdf", 'wb') as file:
-                        file.write(r.content)
-                    print("Wrote file D_" + org + '_' + yr + '_' \
-                              + qtr +".pdf to disk")
-                    sleep(1)
+                    if org in null_returns:
+                        continue
+                    else:
+                        r = requests.get(starturl + org + "R&fin_year=" \
+                                         + yr +"&quarter=" + qtr)
+                        with open(filepath + '/D_' + org + '_' + yr + '_' \
+                                  + qtr +".pdf", 'wb') as file:
+                            file.write(r.content)
+                        print("Wrote file D_" + org + '_' + yr + '_' \
+                                  + qtr +".pdf to disk")
+                        sleep(1)
     return 0
 
 if __name__ == "main":
