@@ -34,31 +34,31 @@ def main():
 #    db, c = database_connect(db_name)
 #    initialize_database()
 #    populate_district_table()
-    
+
     # Get list of years and year-quarters currently available
     years = get_years()
     qtrs = get_quarters(years)
-    
+
     # Open existing database
     db_name="example_wb.db" # change back to: "example_wb.db"
     db, c = database_connect(db_name)
-    
+
     # Query database for numerical IDs and names of all districts of West Bengal
     distnames = c.execute("SELECT state_dist_id, state_dist_name \
                                      FROM districts WHERE state_id='14'").fetchall()
-    
+
     # Prepare data to feed to scraping routine (West Bengal only for now)
     districts = dict(distnames)
     to_scrape = {'14':districts}
-    
+
     # Download all districts of West Bengal for all quarters in database.
     download_disclosures(qtrs, to_scrape)
-    
+
     driver.close()
     logging.info("Ended")
-    
+
     return 0
-    
+
 # Helper functions
 def get_years():
     '''Retrieve a list of fiscal years available in the FCRA database'''
@@ -101,20 +101,20 @@ def get_state_list():
         states[id] = (driver.find_element_by_xpath \
                                   ("//select[@id='DdnListState']//option[@value=" \
                                    + '"' + id + '"' + ']').text)
-    
+
     # Save states list to file
     pickle.dump(states, open("./obj/states.p", "wb"))
     print("States available: ", states)
     return states
-    
+
 def get_district_lists(states):
     '''
-    Retrieve a list of districts in the FCRA database by navigating the 
-    drop-down menus. Takes as input a dictionary that has state IDs as keys. 
+    Retrieve a list of districts in the FCRA database by navigating the
+    drop-down menus. Takes as input a dictionary that has state IDs as keys.
     Returns a dictionary of dictionaries in the following format:
         {'state1_id':{'state1_dist1_id':'state1_dist1_name'...}, /
         'state2_id':{'state2_dist1_id':'state2_dist1_name'...}...}
-    '''  
+    '''
     district_list = {}
     for id in states.keys():
         state_dists = {}
@@ -129,7 +129,7 @@ def get_district_lists(states):
             dist_name = option.text
             state_dists[dist_id] = dist_name
         district_list[id] = state_dists
-    
+
     # Save districts list to file
     pickle.dump(district_list, open("./obj/districts.p", "wb"))
     return(district_list)
@@ -151,14 +151,14 @@ def initialize_database():
     	`state_dist_id`	VARCHAR(4) NOT NULL, \
     	`state_dist_name` VARCHAR(255) NOT NULL)")
     db.commit()
-    
+
     # Organizations table
     db.execute("CREATE TABLE IF NOT EXISTS `organizations` ( \
         `org_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, \
         `fcra` VARCHAR(15) NOT NULL, \
         `org_name` VARCHAR(255))")
     db.commit()
-    
+
     # Disclosures table
     db.execute("CREATE TABLE IF NOT EXISTS `disclosures` ( \
 	`disc_id`	INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, \
@@ -171,7 +171,7 @@ def initialize_database():
 	`purposes`	VARCHAR(255), \
 	`amount` VARCHAR(20))")
     db.commit()
-    
+
 def populate_district_table():
     '''Populate database table of states and districts'''
     print("Gathering all districts for all states. This will take a few minutes.")
@@ -189,12 +189,33 @@ def populate_district_table():
             counter += 1
     db.commit()
     print("Populated districts table with ", counter, "districts")
-    
+
+
+# Linux only (requires pdftk): verify integrity of downloaded file
+def verify_pdf(path):
+    '''Checks PDF integrity and re-downloads if file appears corrupt'''
+    result = subprocess.run([verify_pdf.sh, path], stdout=subprocess.PIPE])
+    return result
+
+def get_file():
+    '''Downloads a disclosure'''
+    r = requests.get(starturl + org + "R&fin_year=" \
+                     + yr +"&quarter=" + qtr)
+    with open(filepath + '/D_' + org + '_' + yr + '_' \
+              + qtr +".pdf", 'wb') as file:
+        file.write(r.content)
+    print("Wrote file D_" + org + '_' + yr + '_' \
+              + qtr +".pdf to disk")
+    try_count += 1
+    sleep(1)
+    return(filepath + '/D_' + org + '_' + yr + '_' + qtr +".pdf")
+
+
 # Download disclosures of selected years, quarters, districts
 def download_disclosures(quarters, districts):
-    '''Downloads PDF disclosures for the quarters and districts specified by 
+    '''Downloads PDF disclosures for the quarters and districts specified by
     the user
-    
+
     INPUT:
         quarters: [('yyyy-yyyy', 'q')...] e.g., [('2015-2016', '3'), ('2015-2016', '4')]
         districts: {'stateid':{'districtid1':'name1'...}...}
@@ -219,25 +240,25 @@ def download_disclosures(quarters, districts):
                     districts_menu.select_by_value(district)
                     submit_btn = driver.find_element_by_id("Button1")
                     submit_btn.click()
-                
+
                     # Create directory to store district disclosures if none exists
                     filepath = "./disclosures/" + state +'/' + district
                     os.makedirs(filepath, exist_ok=True)
-                    
+
                     sleep(2)
-                    
+
                 except requests.exceptions.ConnectionError as e:
                     logging.exception(f"{yr} q{qtr} state {state} \
                                       district {district} failed: \
                                       Connection error")
                     sleep(10)
                     continue
-                    
+
                 except:
                     logging.exception(f"{yr} q{qtr} {state} {district} failed.")
                     sleep(10)
                     continue
-                
+
                 # Compile dict of organization names and FCRA reg numbers
                 dyq_orgs={}
                 null_returns=set()
@@ -248,15 +269,15 @@ def download_disclosures(quarters, districts):
                     org_name = table_data[1].text
                     org_fcra = table_data[2].text
                     amount = table_data[3].text
-                    
+
                     # Save dictionary of district-year-quarter disclosures to scrape
                     dyq_orgs[org_fcra] = org_name
-                    
+
                     # If amount is 0.00, add to set of null returns (don't download!)
                     if amount == "0.00":
                         null_returns.add(org_fcra)
-                    
-                # Check if each organization is already in the database; if not, 
+
+                # Check if each organization is already in the database; if not,
                 # update organizations data table
                 for org in dyq_orgs.keys():
                     rows = c.execute("SELECT org_id FROM organizations WHERE \
@@ -266,21 +287,23 @@ def download_disclosures(quarters, districts):
                                   VALUES (:fcra, :org_name)", {'fcra':org,\
                                   'org_name':dyq_orgs[org]})
                 db.commit()
-                    
+
                 # Save PDF disclosures
                 # TODO: don't download returns with amount 0.00
                 for org in dyq_orgs.keys():
                     if org in null_returns:
                         continue
                     else:
-                        r = requests.get(starturl + org + "R&fin_year=" \
-                                         + yr +"&quarter=" + qtr)
-                        with open(filepath + '/D_' + org + '_' + yr + '_' \
-                                  + qtr +".pdf", 'wb') as file:
-                            file.write(r.content)
-                        print("Wrote file D_" + org + '_' + yr + '_' \
-                                  + qtr +".pdf to disk")
-                        sleep(1)
+                        try_count = 0
+                        path = get_file()
+                        result = verify_pdf(path)
+                        if result == "broken":
+                            print("File corrupted, retrying")
+                            logging.info(f"Re-downloaded %s", path)
+                            while try_count < 3 & result=="broken":
+                                get_file()
+                        else:
+                            continue
     return 0
 
 if __name__ == "main":
