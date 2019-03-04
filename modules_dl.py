@@ -1,66 +1,14 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import logging
 from selenium import webdriver
 from selenium.webdriver.support.ui import Select
+import subprocess
 import os
 import pickle
 import requests
 import sqlite3
 from time import sleep
 
-# Set up Chrome webdriver
-chrome_options=webdriver.ChromeOptions()
-chrome_options.add_argument('--headless')
-chrome_options.add_argument('--disable-gpu')
-chrome_options.add_argument('--window-size=1920x1080')
-# Path to your chromedriver here
-driver = webdriver.Chrome(executable_path= \
-                    "/Users/Sam/Documents/Python/WebDrivers/chromedriver",
-                    options=chrome_options)
-
-logging.basicConfig(filename="download_fcra.log", level=logging.INFO, \
-                    format="%(asctime)s:%(levelname)s:%(message)s")
-
-def main():
-    '''
-    Demonstrates how to initialize a new SQLite database to store FCRA disclosures.
-    Currently downloads all disclosures for West Bengal (state ID 14).
-    '''
-    logging.info("Started")
-    # Prepare a new SQLite database
-#    db_name = input("Enter name of new or existing database file ./database/") + ".db"
-#    db, c = database_connect(db_name)
-#    initialize_database()
-#    populate_district_table()
-
-    # Get list of years and year-quarters currently available
-    years = get_years()
-    qtrs = get_quarters(years)
-
-    # Open existing database
-    db_name="example_wb.db" # change back to: "example_wb.db"
-    db, c = database_connect(db_name)
-
-    # Query database for numerical IDs and names of all districts of West Bengal
-    distnames = c.execute("SELECT state_dist_id, state_dist_name \
-                                     FROM districts WHERE state_id='14'").fetchall()
-
-    # Prepare data to feed to scraping routine (West Bengal only for now)
-    districts = dict(distnames)
-    to_scrape = {'14':districts}
-
-    # Download all districts of West Bengal for all quarters in database.
-    download_disclosures(qtrs, to_scrape)
-
-    driver.close()
-    logging.info("Ended")
-
-    return 0
-
-# Helper functions
-def get_years():
+def get_years(driver):
     '''Retrieve a list of fiscal years available in the FCRA database'''
     years = []
     driver.get('https://fcraonline.nic.in/fc_qtrfrm_report.aspx')
@@ -71,7 +19,7 @@ def get_years():
     print("Years available: ", years)
     return years
 
-def get_quarters(years):
+def get_quarters(years, driver):
     '''Retrieve a list of quarters available for each fiscal year'''
     quarters = []
     driver.get('https://fcraonline.nic.in/fc_qtrfrm_report.aspx')
@@ -87,7 +35,7 @@ def get_quarters(years):
     print("Quarters available: ", quarters)
     return quarters
 
-def get_state_list():
+def get_state_list(driver):
     '''Construct a dictionary of numerical state IDs and state names'''
     driver.get('https://fcraonline.nic.in/fc_qtrfrm_report.aspx')
     states_values = (driver.find_elements_by_xpath \
@@ -107,7 +55,7 @@ def get_state_list():
     print("States available: ", states)
     return states
 
-def get_district_lists(states):
+def get_district_lists(states, driver):
     '''
     Retrieve a list of districts in the FCRA database by navigating the
     drop-down menus. Takes as input a dictionary that has state IDs as keys.
@@ -141,7 +89,7 @@ def database_connect(db_name):
     c = db.cursor()
     return db, c
 
-def initialize_database():
+def initialize_database(db):
     '''Set up an SQLite database'''
     # Districts table
     db.execute("CREATE TABLE IF NOT EXISTS `districts` ( \
@@ -172,11 +120,11 @@ def initialize_database():
 	`amount` VARCHAR(20))")
     db.commit()
 
-def populate_district_table():
+def populate_district_table(driver, db, c):
     '''Populate database table of states and districts'''
     print("Gathering all districts for all states. This will take a few minutes.")
     states = get_state_list()
-    districts = get_district_lists(states)
+    districts = get_district_lists(states, driver)
     counter = 0
     for state in states.keys():
         for district in districts[state].keys():
@@ -194,10 +142,10 @@ def populate_district_table():
 # Linux only (requires pdftk): verify integrity of downloaded file
 def verify_pdf(path):
     '''Checks PDF integrity and re-downloads if file appears corrupt'''
-    result = subprocess.run([verify_pdf.sh, path], stdout=subprocess.PIPE])
+    result = subprocess.run([verify_pdf.sh, path], stdout=subprocess.PIPE)
     return result
 
-def get_file():
+def get_file(yr, qtr, org, filepath, starturl):
     '''Downloads a disclosure'''
     r = requests.get(starturl + org + "R&fin_year=" \
                      + yr +"&quarter=" + qtr)
@@ -206,13 +154,12 @@ def get_file():
         file.write(r.content)
     print("Wrote file D_" + org + '_' + yr + '_' \
               + qtr +".pdf to disk")
-    try_count += 1
     sleep(1)
     return(filepath + '/D_' + org + '_' + yr + '_' + qtr +".pdf")
 
 
 # Download disclosures of selected years, quarters, districts
-def download_disclosures(quarters, districts):
+def download_disclosures(quarters, districts, driver, db, c):
     '''Downloads PDF disclosures for the quarters and districts specified by
     the user
 
@@ -289,22 +236,22 @@ def download_disclosures(quarters, districts):
                 db.commit()
 
                 # Save PDF disclosures
-                # TODO: don't download returns with amount 0.00
                 for org in dyq_orgs.keys():
-                    if org in null_returns:
-                        continue
-                    else:
-                        try_count = 0
-                        path = get_file()
-                        result = verify_pdf(path)
-                        if result == "broken":
-                            print("File corrupted, retrying")
-                            logging.info(f"Re-downloaded %s", path)
-                            while try_count < 3 & result=="broken":
-                                get_file()
-                        else:
+                    try:
+                        if org in null_returns:
                             continue
+                        else:
+                            try_count = 0
+                            path = get_file(yr, qtr, org, filepath, starturl)
+                            result = verify_pdf(path)
+                            while result == "broken" and try_count < 3:
+                                print("File corrupted, retrying")
+                                logging.info(f"Re-downloading %s", path)
+                                sleep(5)
+                                get_file(yr, qtr, org, filepath, starturl)
+                                try_count += 1
+                            else:
+                                continue
+                    except:
+                        logging.info(f"Exception at {path}")
     return 0
-
-if __name__ == "main":
-    main()
