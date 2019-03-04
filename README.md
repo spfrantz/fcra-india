@@ -21,17 +21,17 @@ Design and coding of the web interface to allow users to query and visualize the
 
 The `remove_watermarks` function requires one package in addition to those listed in `requirements.txt`: [`pdf-unstamper.jar`](https://github.com/hwding/pdf-unstamper/releases) by [hwding](https://github.com/hwding) should be placed in the same directory as `parse_fcra.py`. The parser is tested with version 0.2.3.
 
+This version requires the Linux/Unix package `pdfinfo` in order to verify the integrity of downloaded disclosures and to retry in the event the file is corrupt.
+
 ## Status
 
-The core routines for downloading (`download_fcra.py`) and parsing (`parse_fcra.py`) disclosures are working reliably. Example data from West Bengal is included in the `disclosures` and `database` folders of the repository.
+The core routines for downloading (`fcra_download.py`) and parsing (`parse_fcra.py`) disclosures are working reliably. Example data from West Bengal is included in the `disclosures` and `database` folders of the repository.
 
 ## TODO
 Issues to resolve before scraping the full database:
-* The downloader and parser need a way to reliably identify files that are new since their last runs and to insert only those disclosures into the database;
-* Currently the program downloads all disclosures in the MHA dataset, even null disclosures (with amount 0.00). Since there are many of these, it would be much more efficient to not download and parse them;
 * Better connection error handling;
 * Where `time.sleep()` is used to allow dynamic page elements to load, `implicitly_wait()` might be a better solution;
-* A very small proportion of PDFs arrive corrupted (around 1 in 500 on the last run). I can identify these using a simple shell script that calls `pdfinfo` and request them again but should build this process into the downloader or parser.
+* Improved logging.
 
 ## References
 
