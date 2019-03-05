@@ -25,7 +25,7 @@ logging.info("Started")
 db_name = input("Enter name of new or existing database file ./database/")
 db, c = dl.database_connect(db_name)
 dl.initialize_database(db)
-dl.populate_district_table()
+dl.populate_district_table(driver, db, c)
 
 # Get list of years and year-quarters currently available
 years = dl.get_years(driver)
@@ -45,9 +45,9 @@ qtrs = dl.get_quarters(years, driver)
 with open('./obj/districts.p', 'rb') as f:
     districts = pickle.load(f)
 
-# Prepare data to feed to scraping routine (A&N Islands only for now)
+# Prepare data to feed to scraping routine (three states for now)
 # districts = dict(distnames)
-to_scrape = {'24':districts['24']}
+to_scrape = {'24':districts['24'], '01':districts['01'], '31':districts['31']}
 
 # Download all districts of West Bengal for all quarters in database.
 dl.download_disclosures(qtrs, to_scrape, driver, db, c)

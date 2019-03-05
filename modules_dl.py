@@ -110,7 +110,7 @@ def initialize_database(db):
 	`file_id`	INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, \
 	`fcra`	VARCHAR(10) NOT NULL, \
 	`path`	VARCHAR(255) UNIQUE, \
-	`year`	VARCHAR(10) NOT NULL, \
+	`year`	VARCHAR(15) NOT NULL, \
 	`quarter` VARCHAR(4) NOT NULL, \
     `dldate` DATETIME DEFAULT CURRENT_TIME)")
 
@@ -129,7 +129,7 @@ def initialize_database(db):
 def populate_district_table(driver, db, c):
     '''Populate database table of states and districts'''
     print("Gathering all districts for all states. This will take a few minutes.")
-    states = get_state_list()
+    states = get_state_list(driver)
     districts = get_district_lists(states, driver)
     counter = 0
     for state in states.keys():
@@ -157,29 +157,36 @@ def get_file(yr, qtr, org, filepath, starturl, db, c):
                      + yr +"&quarter=" + qtr)
     
     # Create file information in database
-    c.execute("INSERT INTO files (fcra, path, year, quarter, dltime) VALUES \
-              (:fcra, :year, :quarter, :date)", {'fcra':org, 'year':yr, \
-              'quarter':qtr, 'date':datetime('now')})
+    c.execute("INSERT INTO files (fcra, year, quarter) VALUES \
+              (:fcra, :year, :quarter)", {'fcra':org, 'year':yr, \
+              'quarter':qtr})
     db.commit()
     
-    # Get unique file ID to append to filename
-    file_id = c.execute("SELECT file_id FROM files WHERE fcra = :org AND \
+    # Get unique file ID to append to filename (unpack tuple)
+    file_id, = c.execute("SELECT file_id FROM files WHERE fcra = :org AND \
                         year = :yr AND quarter = :quarter", {'org':org, \
                         'yr':yr, 'quarter':qtr}).fetchone()
     
     # Download disclosure
-    with open(filepath + '/D_' + file_id + org + '_' + yr + '_' \
-              + qtr +".pdf", 'wb') as file:
+    full_path = (filepath + '/D_' + str(file_id) + '_' + org + '_' + yr + '_' \
+              + qtr + ".pdf")
+    
+    print("Full path: ", full_path)
+    
+    with open(full_path, 'wb') as file:
         file.write(r.content)
     
-    # Associate path with file_id in database
-    c.execute("INSERT INTO files (path) VALUES (:path) WHERE \
-              file_id = :file_id", {'file_id':file_id})
+    print("Downloaded ", full_path)
     
-    print("Wrote file D_" + file_id + org + '_' + yr + '_' \
+    # Associate path with file_id in database
+    c.execute("UPDATE files SET path = :full_path WHERE file_id = :file_id", \
+              {'file_id':file_id, 'full_path':full_path})
+    db.commit()
+
+    print("Wrote file D_" + str(file_id) + org + '_' + yr + '_' \
               + qtr +".pdf to disk")
     sleep(1)
-    return(filepath + '/D_' + file_id + org + '_' + yr + '_' + qtr +".pdf")
+    return(full_path)
 
 
 # Download disclosures of selected years, quarters, districts
@@ -279,5 +286,5 @@ def download_disclosures(quarters, districts, driver, db, c):
                             else:
                                 continue
                     except:
-                        logging.info(f"Exception at {path}")
+                        logging.exception(f"Exception at {org} {yr} {qtr}")
     return 0
