@@ -98,26 +98,32 @@ def initialize_database(db):
     	`state_name`	VARCHAR(25) NOT NULL, \
     	`state_dist_id`	VARCHAR(4) NOT NULL, \
     	`state_dist_name` VARCHAR(255) NOT NULL)")
-    db.commit()
 
     # Organizations table
     db.execute("CREATE TABLE IF NOT EXISTS `organizations` ( \
         `org_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, \
         `fcra` VARCHAR(15) NOT NULL, \
         `org_name` VARCHAR(255))")
-    db.commit()
+    
+    # Files table
+    db.execute("CREATE TABLE IF NOT EXISTS `files` ( \
+	`file_id`	INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, \
+	`fcra`	VARCHAR(10) NOT NULL, \
+	`path`	VARCHAR(255) UNIQUE, \
+	`year`	VARCHAR(10) NOT NULL, \
+	`quarter` VARCHAR(4) NOT NULL, \
+    `dldate` DATETIME DEFAULT CURRENT_TIME)")
 
     # Disclosures table
     db.execute("CREATE TABLE IF NOT EXISTS `disclosures` ( \
 	`disc_id`	INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, \
-	`fcra`	VARCHAR(15) NOT NULL, \
-	`year`	VARCHAR(8), \
-	`quarter`	VARCHAR(4), \
-	`donor_name`	VARCHAR(255), \
-	`donor_type`	VARCHAR(255), \
+    `file_id`	INTEGER NOT NULL, \
+	`donor_name`	 VARCHAR(255), \
+	`donor_type` 	VARCHAR(255), \
 	`donor_address`	TEXT, \
 	`purposes`	VARCHAR(255), \
 	`amount` VARCHAR(20))")
+    
     db.commit()
 
 def populate_district_table(driver, db, c):
@@ -128,12 +134,12 @@ def populate_district_table(driver, db, c):
     counter = 0
     for state in states.keys():
         for district in districts[state].keys():
-            c.execute("INSERT INTO districts (state_id, state_name, state_dist_id, \
-                                      state_dist_name) VALUES (:state_id, \
-                                      :state_name, :state_dist_id, :state_dist_name)", \
-                                    {'state_id':state, 'state_name':states[state], \
-                                    'state_dist_id':district, \
-                                    'state_dist_name':districts[state][district]})
+            c.execute("INSERT INTO districts (state_id, state_name, \
+                    state_dist_id, state_dist_name) VALUES (:state_id, \
+                    :state_name, :state_dist_id, :state_dist_name)", \
+                    {'state_id':state, 'state_name':states[state], \
+                     'state_dist_id':district, \
+                     'state_dist_name':districts[state][district]})
             counter += 1
     db.commit()
     print("Populated districts table with ", counter, "districts")
@@ -145,17 +151,35 @@ def verify_pdf(path):
     result = subprocess.run([verify_pdf.sh, path], stdout=subprocess.PIPE)
     return result
 
-def get_file(yr, qtr, org, filepath, starturl):
+def get_file(yr, qtr, org, filepath, starturl, db, c):
     '''Downloads a disclosure'''
     r = requests.get(starturl + org + "R&fin_year=" \
                      + yr +"&quarter=" + qtr)
-    with open(filepath + '/D_' + org + '_' + yr + '_' \
+    
+    # Create file information in database
+    c.execute("INSERT INTO files (fcra, path, year, quarter, dltime) VALUES \
+              (:fcra, :year, :quarter, :date)", {'fcra':org, 'year':yr, \
+              'quarter':qtr, 'date':datetime('now')})
+    db.commit()
+    
+    # Get unique file ID to append to filename
+    file_id = c.execute("SELECT file_id FROM files WHERE fcra = :org AND \
+                        year = :yr AND quarter = :quarter", {'org':org, \
+                        'yr':yr, 'quarter':qtr}).fetchone()
+    
+    # Download disclosure
+    with open(filepath + '/D_' + file_id + org + '_' + yr + '_' \
               + qtr +".pdf", 'wb') as file:
         file.write(r.content)
-    print("Wrote file D_" + org + '_' + yr + '_' \
+    
+    # Associate path with file_id in database
+    c.execute("INSERT INTO files (path) VALUES (:path) WHERE \
+              file_id = :file_id", {'file_id':file_id})
+    
+    print("Wrote file D_" + file_id + org + '_' + yr + '_' \
               + qtr +".pdf to disk")
     sleep(1)
-    return(filepath + '/D_' + org + '_' + yr + '_' + qtr +".pdf")
+    return(filepath + '/D_' + file_id + org + '_' + yr + '_' + qtr +".pdf")
 
 
 # Download disclosures of selected years, quarters, districts
@@ -242,13 +266,15 @@ def download_disclosures(quarters, districts, driver, db, c):
                             continue
                         else:
                             try_count = 0
-                            path = get_file(yr, qtr, org, filepath, starturl)
+                            path = get_file(yr, qtr, org, filepath, starturl, \
+                                            db, c)
                             result = verify_pdf(path)
                             while result == "broken" and try_count < 3:
                                 print("File corrupted, retrying")
                                 logging.info(f"Re-downloading %s", path)
                                 sleep(5)
-                                get_file(yr, qtr, org, filepath, starturl)
+                                get_file(yr, qtr, org, filepath, starturl, \
+                                         db, c)
                                 try_count += 1
                             else:
                                 continue

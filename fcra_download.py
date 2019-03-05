@@ -3,13 +3,8 @@
 
 import logging
 from selenium import webdriver
-from selenium.webdriver.support.ui import Select
 import modules_dl as dl
-import os
 import pickle
-import requests
-import sqlite3
-from time import sleep
 
 # Set up Chrome webdriver
 chrome_options=webdriver.ChromeOptions()
@@ -25,21 +20,20 @@ logging.basicConfig(filename="download_fcra.log", level=logging.INFO, \
                     format="%(asctime)s:%(levelname)s:%(message)s")
 
 logging.info("Started")
+
 # Prepare a new SQLite database
-#    db_name = input("Enter name of new or existing database file ./database/") + ".db"
-#    db, c = database_connect(db_name)
-#    initialize_database()
-#    populate_district_table()
+db_name = input("Enter name of new or existing database file ./database/")
+db, c = dl.database_connect(db_name)
+dl.initialize_database(db)
+dl.populate_district_table()
 
 # Get list of years and year-quarters currently available
-
-
 years = dl.get_years(driver)
 qtrs = dl.get_quarters(years, driver)
 
 # Open existing database: Andaman & Nicobar Islands
-db_name="a_n.db" 
-db, c = dl.database_connect(db_name)
+#db_name="a_n.db" 
+#db, c = dl.database_connect(db_name)
 
 # dl.initialize_database(db)
 

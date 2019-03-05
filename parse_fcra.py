@@ -28,13 +28,13 @@ def main():
                     pdfs.add(path)
                     print("Found ", path)
     for file in pdfs:           
-        data, fcra, year, quarter = parse_disclosure(file)
+        data, fcra, year, quarter, file_id = parse_disclosure(file)
         print("Parsed ", file)
         if data is None:
             print("No disclosures in ", file)
             continue
         else:
-            write_data(data, fcra, year, quarter)
+            write_data(data, fcra, year, quarter, file_id)
             print("Wrote ", file)
             
     logging.info("Finished")
@@ -71,9 +71,10 @@ def parse_disclosure(disclosure):
         return None, None, None, None
     
     filename_data = disclosure.strip('pdf').split('_')
-    fcra = filename_data[1]
-    year = filename_data[2]
-    quarter=filename_data[3]
+    file_id = filename_data[1]
+    fcra = filename_data[2]
+    year = filename_data[3]
+    quarter=filename_data[4]
     
     # Check that the dataframe has 6 columns and at least 1 row
     length, width = data.shape
@@ -97,18 +98,17 @@ def parse_disclosure(disclosure):
         if bool1[i] == True or bool2[i] == True:
             data = data.drop(i)
     
-    return(data, fcra, year, quarter)
+    return(data, fcra, year, quarter, file_id)
 
-def write_data(disc_df, fcra, year, quarter):
+def write_data(disc_df, fcra, year, quarter, file_id):
     '''Takes a pandas dataframe and writes it to SQLite disclosures table'''
     for index, row in disc_df.iterrows():
-        c.execute("INSERT INTO disclosures (fcra, year, quarter, donor_name, \
-                    donor_type, donor_address, purposes, amount) VALUES \
-                    (:fcra, :year, :quarter, :donor_name, :donor_type, \
-                    :donor_address, :purposes, :amount)", {'fcra':fcra, \
-                    'year':year, 'quarter':quarter, 'donor_name':row[1], \
+        c.execute("INSERT INTO disclosures (donor_name, donor_type, \
+                    donor_address, purposes, amount, file_id) VALUES \
+                    (:donor_name, :donor_type, :donor_address, :purposes, \
+                    :amount, :file_id)", {'donor_name':row[1], \
                     'donor_type':row[2], 'donor_address':row[3], \
-                    'purposes':row[4], 'amount':row[5]})
+                    'purposes':row[4], 'amount':row[5], 'file_id':file_id})
         db.commit()
     return 0
 
