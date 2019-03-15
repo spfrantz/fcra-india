@@ -1,5 +1,4 @@
 import logging
-from selenium import webdriver
 from selenium.webdriver.support.ui import Select
 import subprocess
 import os
@@ -104,11 +103,12 @@ def initialize_database(db):
         `org_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, \
         `fcra` VARCHAR(15) NOT NULL, \
         `org_name` VARCHAR(255))")
-    
+
     # Files table
     db.execute("CREATE TABLE IF NOT EXISTS `files` ( \
 	`file_id`	INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, \
 	`fcra`	VARCHAR(10) NOT NULL, \
+    `dist_id` INTEGER NOT NULL, \
 	`path`	VARCHAR(255) UNIQUE, \
 	`year`	VARCHAR(15) NOT NULL, \
 	`quarter` VARCHAR(4) NOT NULL, \
@@ -123,7 +123,7 @@ def initialize_database(db):
 	`donor_address`	TEXT, \
 	`purposes`	VARCHAR(255), \
 	`amount` VARCHAR(20))")
-    
+
     db.commit()
 
 def populate_district_table(driver, db, c):
@@ -148,42 +148,43 @@ def populate_district_table(driver, db, c):
 # Linux only (requires pdftk): verify integrity of downloaded file
 def verify_pdf(path):
     '''Checks PDF integrity and re-downloads if file appears corrupt'''
-    result = subprocess.run([verify_pdf.sh, path], stdout=subprocess.PIPE)
+    result = subprocess.run(["./verify_pdf.sh", path], stdout=subprocess.PIPE)
     return result
 
-def get_file(yr, qtr, org, filepath, starturl, db, c):
+def get_file(yr, qtr, org, filepath, starturl, db, c, state, district):
     '''Downloads a disclosure'''
     r = requests.get(starturl + org + "R&fin_year=" \
                      + yr +"&quarter=" + qtr)
-    
+
+    # Look up district id
+    dist_id, = c.execute("SELECT dist_id FROM districts WHERE \
+                         state_id = :state AND state_dist_id = :district", \
+                         {'state':state, 'district':district})
+
     # Create file information in database
-    c.execute("INSERT INTO files (fcra, year, quarter) VALUES \
-              (:fcra, :year, :quarter)", {'fcra':org, 'year':yr, \
-              'quarter':qtr})
+    c.execute("INSERT INTO files (fcra, year, quarter, dist_id) VALUES \
+              (:fcra, :year, :quarter, :dist_id)", {'fcra':org, 'year':yr, \
+              'quarter':qtr, 'dist_id':dist_id})
     db.commit()
-    
+
     # Get unique file ID to append to filename (unpack tuple)
     file_id, = c.execute("SELECT file_id FROM files WHERE fcra = :org AND \
                         year = :yr AND quarter = :quarter", {'org':org, \
                         'yr':yr, 'quarter':qtr}).fetchone()
-    
+
     # Download disclosure
     full_path = (filepath + '/D_' + str(file_id) + '_' + org + '_' + yr + '_' \
               + qtr + ".pdf")
-    
-    print("Full path: ", full_path)
-    
+
     with open(full_path, 'wb') as file:
         file.write(r.content)
-    
-    print("Downloaded ", full_path)
-    
+
     # Associate path with file_id in database
     c.execute("UPDATE files SET path = :full_path WHERE file_id = :file_id", \
               {'file_id':file_id, 'full_path':full_path})
     db.commit()
 
-    print("Wrote file D_" + str(file_id) + org + '_' + yr + '_' \
+    print("Wrote file D_" + str(file_id) + '_' + org + '_' + yr + '_' \
               + qtr +".pdf to disk")
     sleep(1)
     return(full_path)
@@ -274,17 +275,21 @@ def download_disclosures(quarters, districts, driver, db, c):
                         else:
                             try_count = 0
                             path = get_file(yr, qtr, org, filepath, starturl, \
-                                            db, c)
+                                            db, c, state, district)
                             result = verify_pdf(path)
                             while result == "broken" and try_count < 3:
                                 print("File corrupted, retrying")
                                 logging.info(f"Re-downloading %s", path)
                                 sleep(5)
                                 get_file(yr, qtr, org, filepath, starturl, \
-                                         db, c)
+                                         db, c, state, district)
                                 try_count += 1
                             else:
                                 continue
                     except:
                         logging.exception(f"Exception at {org} {yr} {qtr}")
+
+            logging.info(f"Finished {state} {yr} qtr {qtr}")
+            print(f"Finished state {state} {yr} qtr {qtr}")
+
     return 0
