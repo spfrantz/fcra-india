@@ -8,7 +8,7 @@ import os
 import subprocess
 from tabula import read_pdf
 
-db = sqlite3.connect("./database/example_wb.db")
+db = sqlite3.connect("./database/2019-03-fcra.db")
 c = db.cursor()
 
 logging.basicConfig(filename="parse_fcra.log", level=logging.INFO, \
@@ -27,15 +27,19 @@ def main():
                     path = os.path.abspath(os.path.join(root, name))
                     pdfs.add(path)
                     print("Found ", path)
-    for file in pdfs:           
-        data, fcra, year, quarter, file_id = parse_disclosure(file)
-        print("Parsed ", file)
-        if data is None:
-            print("No disclosures in ", file)
-            continue
-        else:
-            write_data(data, fcra, year, quarter, file_id)
-            print("Wrote ", file)
+    for file in pdfs:
+        try:           
+            data, fcra, year, quarter, file_id = parse_disclosure(file)
+            print("Parsed ", file)
+            if data is None:
+                print("No disclosures in ", file)
+                logging.info(f"No disclosures in {file}")
+                continue
+            else:
+                write_data(data, fcra, year, quarter, file_id)
+                print("Wrote ", file)
+        except:
+            logging.exception(f"Failure at {file}")
             
     logging.info("Finished")
     return 0
