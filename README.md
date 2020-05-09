@@ -4,9 +4,12 @@ Registered organizations in India that receive contributions from foreign indivi
 
 This project aims to make these disclosures more accessible by accomplishing the following objectives:
 * Download and parse all disclosures to create a database of recipient organizations and their donors;
+* Merge this dataset with [disclosures obtained](http://csip.ashoka.edu.in/estimating-philanthropic-capital-in-india-datasets/) by Ashoka University's Centre for the Study of Impact & Philanthropy under the Right to Information Act;
 * Allow users to query the database by year, quarter, state, district, organization, and other characteristics, and to export a downloadable file for analysis;
 * Create an interactive visualization of foreign flows to Indian organizations;
 * Update the database each quarter.
+
+This repository currently provides the code used to download (`fcra_download.py`) the FCRA disclosures and parse them (`parse_fcra.py`)into an SQLite database. It also includes sample data for West Bengal.
 
 ## Technical overview
 
@@ -25,14 +28,4 @@ This version requires the Linux/Unix package `pdfinfo` in order to verify the in
 
 ## Status
 
-The core routines for downloading (`fcra_download.py`) and parsing (`parse_fcra.py`) disclosures are working reliably. Example data from West Bengal is included in the `disclosures` and `database` folders of the repository.
-
-## TODO
-Issues to resolve before scraping the full database:
-* Better connection error handling;
-* Where `time.sleep()` is used to allow dynamic page elements to load, `implicitly_wait()` might be a better solution;
-* Improved logging.
-
-## References
-
-TODO
+The full MHA database through 2019 has been downloaded and parsed. It includes 373,576 donations to 14,825 organizations. Donations have been grouped by donor and top 5000 institutional donors de-duplicated (i.e., donor organizations are often listed under various spellings, which are now standardized). The next steps are to: merge the scraped data with data obtained for earlier years by the Centre for Study of Impact and Philanthropy under the Right to Information Act; de-duplicate the donor names in the new dataset; perform an exploratory data analysis; and release the data to the public.
